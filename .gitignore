@@ -1,0 +1,9 @@
+# Intern monitor
+.env
+data/
+__pycache__/
+.venv/
+venv/
+*.pyc
+.DS_Store
+*.egg-info/

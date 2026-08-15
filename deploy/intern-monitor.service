@@ -1,0 +1,22 @@
+[Unit]
+Description=Intern Search Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/intern-search
+EnvironmentFile=/home/ubuntu/intern-search/.env
+ExecStart=/home/ubuntu/intern-search/.venv/bin/python intern_monitor.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Adjust User=, WorkingDirectory=, EnvironmentFile=, and ExecStart= if the
+# Oracle image uses a different default account (e.g. opc for Oracle Linux)
+# or if the repo lives at a different path.
+
+[Install]
+WantedBy=multi-user.target
