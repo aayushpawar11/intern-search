@@ -59,6 +59,7 @@ class RateLimitedSession:
         url: str,
         *,
         json_body: Any | None = None,
+        form_data: Any | None = None,
         params: dict | None = None,
         headers: dict | None = None,
         allow_redirects: bool = True,
@@ -74,6 +75,8 @@ class RateLimitedSession:
         }
         if json_body is not None:
             kwargs["json"] = json_body
+        if form_data is not None:
+            kwargs["data"] = form_data
         if _IMPERSONATE:
             kwargs["impersonate"] = _IMPERSONATE
         resp = self.session.request(method, url, **kwargs)

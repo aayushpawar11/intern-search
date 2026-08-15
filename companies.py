@@ -72,8 +72,7 @@ COMPANIES: list[Company] = [
         name="Meta",
         source="meta",
         careers_url="https://www.metacareers.com/jobs?roles[0]=Internship&sort_by_new=true",
-        extra={"note": "GraphQL job list is not wired; leave disabled until a stable public endpoint exists."},
-        enabled=False,
+        extra={"doc_id": "27129360303422352"},
     ),
     Company(
         name="Tesla",

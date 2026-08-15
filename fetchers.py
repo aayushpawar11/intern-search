@@ -544,59 +544,92 @@ def fetch_apple(http: RateLimitedSession, company: Company) -> list[JobPosting]:
 
 
 def fetch_meta(http: RateLimitedSession, company: Company) -> list[JobPosting]:
+    """Meta careers GraphQL: CareersJobSearchResultsV2DataQuery."""
     jobs: list[JobPosting] = []
-    url = company.careers_url or "https://www.metacareers.com/jobsearch/?sort_by_new=true&roles[0]=Internship"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) "
-            "Gecko/20100101 Firefox/125.0"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Referer": "https://www.metacareers.com/",
-    }
-    resp = http.get(url, headers=headers)
-    if resp.status_code >= 400:
-        logger.warning("Meta HTTP %s", resp.status_code)
+    page_url = (
+        company.careers_url
+        or "https://www.metacareers.com/jobs?roles[0]=Internship&sort_by_new=true"
+    )
+    page = http.get(page_url)
+    if page.status_code >= 400:
+        logger.warning("Meta HTTP %s", page.status_code)
         return jobs
-    html = resp.text
-    for match in re.finditer(
-        r'"id"\s*:\s*"?(\d{5,})"?\s*,\s*"title"\s*:\s*"([^"]+)"',
-        html,
-    ):
-        job_id, title = match.group(1), unescape(match.group(2))
-        jobs.append(
-            JobPosting(
-                company=company.name,
-                title=_text(title, 0),
-                url=f"https://www.metacareers.com/jobs/{job_id}",
-                posted_date="",
-                location="",
-                details="Internship",
-                job_id=job_id,
-            )
-        )
-    soup = BeautifulSoup(html, "html.parser")
-    for a in soup.select('a[href*="/jobs/"]'):
-        href = a.get("href") or ""
-        mid = re.search(r"/jobs/(\d+)", href)
-        title = _text(a.get_text(), 0)
-        if not mid or not title or len(title) < 8:
+    lsd_m = re.search(r'\["LSD",\[\],\{"token":"([^"]+)"', page.text)
+    if not lsd_m:
+        logger.warning("Meta: no LSD token in careers HTML")
+        return jobs
+    lsd = lsd_m.group(1)
+    doc_id = str(company.extra.get("doc_id") or "27129360303422352")
+    search_input = {
+        "q": None,
+        "divisions": [],
+        "offices": [],
+        "roles": ["Internship"],
+        "leadership_levels": [],
+        "saved_jobs": [],
+        "saved_searches": [],
+        "sub_teams": [],
+        "teams": [],
+        "is_leadership": False,
+        "is_remote_only": False,
+        "sort_by_new": True,
+        "page": 1,
+    }
+    variables = {
+        "isLoggedIn": False,
+        "viewasUserID": None,
+        "search_input": search_input,
+    }
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": page_url,
+        "Origin": "https://www.metacareers.com",
+        "X-FB-LSD": lsd,
+        "X-FB-Friendly-Name": "CareersJobSearchResultsV2DataQuery",
+        "Accept": "*/*",
+    }
+    payload = {
+        "lsd": lsd,
+        "fb_api_caller_class": "RelayModern",
+        "fb_api_req_friendly_name": "CareersJobSearchResultsV2DataQuery",
+        "server_timestamps": "true",
+        "doc_id": doc_id,
+        "variables": json.dumps(variables),
+    }
+    resp = http.post(
+        "https://www.metacareers.com/api/graphql",
+        form_data=payload,
+        headers=headers,
+    )
+    data = _ok_json(resp, company.name)
+    if not isinstance(data, dict):
+        return jobs
+    inner = (data.get("data") or {}).get("job_search_with_featured_jobs_v2") or {}
+    listings = list(inner.get("all_jobs") or []) + list(inner.get("featured_jobs") or [])
+    seen: set[str] = set()
+    for job in listings:
+        if not isinstance(job, dict):
             continue
+        job_id = str(job.get("id") or "")
+        title = _text(job.get("title"), 0)
+        if not job_id or job_id in seen or not title:
+            continue
+        seen.add(job_id)
+        loc = job.get("locations") or []
+        teams = job.get("teams") or []
+        sub = job.get("sub_teams") or []
         jobs.append(
             JobPosting(
                 company=company.name,
                 title=title,
-                url=urljoin("https://www.metacareers.com", href),
+                url=f"https://www.metacareers.com/jobs/{job_id}",
                 posted_date="",
-                location="",
-                details="Internship",
-                job_id=mid.group(1),
+                location=_text(loc),
+                details=_text(list(teams) + list(sub)),
+                job_id=job_id,
             )
         )
-    uniq: dict[str, JobPosting] = {}
-    for job in jobs:
-        uniq[job.job_id] = job
-    return list(uniq.values())
+    return jobs
 
 
 def fetch_tesla(http: RateLimitedSession, company: Company) -> list[JobPosting]:
