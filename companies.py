@@ -7,7 +7,7 @@ Commenting a block out also works.
 
 Sources (public career-board APIs, not LinkedIn scraping):
   greenhouse, lever, ashby, workday, rippling, amazon, eightfold, phenom,
-  google, apple, meta, tesla, tiktok, avature, html
+  google, apple, meta, tesla, tiktok, avature, workable, jibe, tinder, html
 """
 
 from __future__ import annotations
@@ -530,6 +530,78 @@ COMPANIES: list[Company] = [
         slug="paloaltonetworks",
         careers_url="https://jobs.paloaltonetworks.com",
         extra={"tenant": "paloaltonetworks", "dc": "wd5", "site": "External_Career_Site"},
+    ),
+    Company(
+        name="Asana",
+        source="greenhouse",
+        slug="asana",
+        careers_url="https://asana.com/jobs/all",
+    ),
+    Company(
+        name="Duolingo",
+        source="greenhouse",
+        slug="duolingo",
+        careers_url="https://careers.duolingo.com/#careers",
+    ),
+    Company(
+        name="Cloudflare",
+        source="greenhouse",
+        slug="cloudflare",
+        careers_url="https://www.cloudflare.com/careers/jobs/",
+    ),
+    Company(
+        name="Hugging Face",
+        source="workable",
+        slug="huggingface",
+        careers_url="https://apply.workable.com/huggingface/#jobs",
+    ),
+    Company(
+        name="HubSpot",
+        source="html",
+        careers_url=(
+            "https://www.hubspot.com/careers/jobs"
+            "?page=1#office=san-francisco,remote;department=product-ux-engineering;"
+        ),
+        extra={"note": "Careers GraphQL is Cloudflare-blocked; HTML fallback until a public JSON feed exists."},
+    ),
+    Company(
+        name="Patreon",
+        source="ashby",
+        slug="patreon",
+        careers_url="https://jobs.ashbyhq.com/patreon",
+    ),
+    Company(
+        name="DocuSign",
+        source="jibe",
+        careers_url="https://careers.docusign.com/careers-home/jobs",
+        extra={
+            "api": "https://careers.docusign.com/api/jobs",
+            "query": "intern",
+            "job_url_base": "https://careers.docusign.com/careers-home/jobs",
+        },
+    ),
+    Company(
+        name="Reddit",
+        source="greenhouse",
+        slug="reddit",
+        careers_url="https://redditinc.com/careers",
+    ),
+    Company(
+        name="SeatGeek",
+        source="greenhouse",
+        slug="seatgeek",
+        careers_url="https://seatgeek.com/jobs?departments=softwareengineering&locations=all",
+    ),
+    Company(
+        name="Lattice",
+        source="greenhouse",
+        slug="lattice",
+        careers_url="https://lattice.com/job",
+    ),
+    Company(
+        name="Tinder",
+        source="tinder",
+        careers_url="https://www.lifeattinder.com/positions?department=engineering",
     ),
 ]
 

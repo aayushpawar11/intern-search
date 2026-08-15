@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from html import unescape
 from typing import Callable
@@ -865,6 +866,125 @@ def _jobs_from_html(company: Company, html: str, page_url: str) -> list[JobPosti
     return list(uniq.values())
 
 
+def _direct_get(http: RateLimitedSession, url: str, headers: dict | None = None):
+    """Same session, skip the global inter-company delay (used for sitemap fan-out)."""
+    kwargs = {"timeout": 25, "headers": headers or {}, "allow_redirects": True}
+    try:
+        return http.session.get(url, impersonate="safari184", **kwargs)
+    except TypeError:
+        return http.session.get(url, **kwargs)
+
+
+def fetch_workable(http: RateLimitedSession, company: Company) -> list[JobPosting]:
+    slug = company.slug
+    url = f"https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true"
+    data = _ok_json(http.get(url), company.name)
+    if not isinstance(data, dict):
+        return []
+    jobs = []
+    for job in data.get("jobs") or []:
+        loc = job.get("location") or {}
+        if isinstance(loc, dict):
+            loc = loc.get("location_str") or loc.get("city") or loc.get("country") or ""
+        jobs.append(
+            JobPosting(
+                company=company.name,
+                title=_text(job.get("title"), 0),
+                url=_text(job.get("url") or job.get("shortlink") or job.get("application_url"), 0),
+                posted_date=_text(job.get("published_on") or job.get("created_at")),
+                location=_text(loc or job.get("country")),
+                details=_text(job.get("department") or job.get("employment_type")),
+                job_id=str(job.get("shortcode") or job.get("code") or job.get("title") or ""),
+            )
+        )
+    return jobs
+
+
+def fetch_jibe(http: RateLimitedSession, company: Company) -> list[JobPosting]:
+    """Oracle Jibe / CX talent sites such as careers.docusign.com."""
+    api = company.extra.get("api") or urljoin(company.careers_url, "/api/jobs")
+    query = company.extra.get("query", "intern")
+    jobs: list[JobPosting] = []
+    page = 1
+    page_size = 50
+    while page <= 8:
+        params = {"pageSize": page_size, "page": page, "keyword": query}
+        data = _ok_json(http.get(api, params=params), company.name)
+        if not isinstance(data, dict):
+            break
+        batch = data.get("jobs") or []
+        total = int(data.get("totalCount") or data.get("count") or 0)
+        for wrap in batch:
+            job = wrap.get("data") if isinstance(wrap, dict) and "data" in wrap else wrap
+            if not isinstance(job, dict):
+                continue
+            slug = str(job.get("slug") or job.get("req_id") or "")
+            title = _text(job.get("title"), 0)
+            apply = job.get("apply_url") or ""
+            job_base = company.extra.get("job_url_base", "").rstrip("/")
+            url = f"{job_base}/{slug}" if job_base and slug else (apply or company.careers_url)
+            jobs.append(
+                JobPosting(
+                    company=company.name,
+                    title=title,
+                    url=_text(url, 0),
+                    posted_date=_text(job.get("posted_date") or job.get("create_date")),
+                    location=_text(job.get("full_location") or job.get("city") or job.get("location_name")),
+                    details=_text(job.get("category") or job.get("employment_type") or job.get("description")),
+                    job_id=str(job.get("req_id") or slug or title),
+                )
+            )
+        page += 1
+        if not batch or (total and page_size * (page - 1) >= total):
+            break
+    return jobs
+
+
+def fetch_tinder(http: RateLimitedSession, company: Company) -> list[JobPosting]:
+    """Tinder listings live on Webflow; the sitemap is the only complete index."""
+    sitemap = http.get("https://www.lifeattinder.com/sitemap.xml")
+    if sitemap.status_code >= 400:
+        logger.warning("Tinder sitemap HTTP %s", sitemap.status_code)
+        return []
+    locs = re.findall(
+        r"<loc>(https://(?:www\.)?lifeattinder\.com/positions/([^<]+))</loc>",
+        sitemap.text,
+    )
+    by_id: dict[str, str] = {}
+    for url, slug in locs:
+        mid = re.match(
+            r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+            slug,
+            re.I,
+        )
+        if not mid:
+            continue
+        by_id.setdefault(mid.group(1), url)
+    jobs: list[JobPosting] = []
+    for job_id, url in by_id.items():
+        time.sleep(0.12)
+        resp = _direct_get(http, url)
+        if resp.status_code >= 400:
+            continue
+        title_m = re.search(r"<h1[^>]*>(.*?)</h1>", resp.text, re.S | re.I)
+        title = _text(unescape(re.sub(r"<[^>]+>", "", title_m.group(1))) if title_m else "", 0)
+        if not title:
+            continue
+        loc_m = re.search(r"/positions/[0-9a-f-]+-(.+)$", url, re.I)
+        jobs.append(
+            JobPosting(
+                company=company.name,
+                title=title,
+                url=url,
+                posted_date="",
+                location=_text(loc_m.group(1).replace("-", " ") if loc_m else ""),
+                details="",
+                job_id=job_id,
+            )
+        )
+    return jobs
+
+
 FETCHERS: dict[str, Callable[[RateLimitedSession, Company], list[JobPosting]]] = {
     "greenhouse": fetch_greenhouse,
     "lever": fetch_lever,
@@ -882,6 +1002,9 @@ FETCHERS: dict[str, Callable[[RateLimitedSession, Company], list[JobPosting]]] =
     "tiktok": fetch_tiktok,
     "avature": fetch_avature,
     "atlassian": fetch_atlassian,
+    "workable": fetch_workable,
+    "jibe": fetch_jibe,
+    "tinder": fetch_tinder,
     "html": fetch_html,
 }
 
